@@ -1,0 +1,123 @@
+name: Build ESP32 Firmware
+
+# ─── Triggers ────────────────────────────────────────────────────────────────
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "firmware/**"
+      - ".github/workflows/build-firmware.yml"
+  pull_request:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/build-firmware.yml"
+  workflow_dispatch:
+
+# ─── Jobs ─────────────────────────────────────────────────────────────────────
+jobs:
+  build:
+    name: Build — ${{ matrix.board.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        board:
+          # ── Lolin S2 Mini ────────────────────────────────────────────────────
+          - name: "Lolin S2 Mini (ESP32-S2)"
+            fqbn: "esp32:esp32:lolin_s2_mini"
+            artifact_suffix: "lolin-s2-mini"
+            # Passed to board_config.h to select the correct pin layout
+            board_define: "BOARD_LOLIN_S2_MINI"
+
+          # ── Distro Board V1 ──────────────────────────────────────────────────
+          - name: "Distro Board V1 — ESP32 Dev Module"
+            fqbn: "esp32:esp32:esp32"
+            artifact_suffix: "distro-v1-esp32"
+            board_define: "BOARD_DISTRO_V1"
+
+          # ── Distro Board V2 ──────────────────────────────────────────────────
+          - name: "Distro Board V2 — ESP32-S3"
+            fqbn: "esp32:esp32:esp32s3"
+            artifact_suffix: "distro-v2-esp32s3"
+            board_define: "BOARD_DISTRO_V2"
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Assemble sketch folder ────────────────────────────────────────────
+      # arduino-cli requires the .ino file to live inside a directory whose
+      # name matches the sketch.  The repo keeps the .ino and all .h headers
+      # flat inside firmware/, so we assemble the correct layout here.
+      - name: Prepare sketch directory
+        run: |
+          SKETCH_DIR="firmware/sesame-firmware-main"
+          mkdir -p "$SKETCH_DIR"
+
+          cp firmware/sesame-firmware-main.ino "$SKETCH_DIR/"
+
+          for header in firmware/*.h; do
+            cp "$header" "$SKETCH_DIR/"
+          done
+
+          echo "── Sketch directory contents ──"
+          ls -lh "$SKETCH_DIR"
+
+      # ── 3. Compile ───────────────────────────────────────────────────────────
+      # arduino/compile-sketches installs arduino-cli, the ESP32 platform, and
+      # all required libraries automatically.
+      #
+      # cli-compile-flags injects -DBOARD_<NAME> so board_config.h selects the
+      # correct I2C pins and servo pin array for each board target.
+      - name: Compile sketch
+        uses: arduino/compile-sketches@v1
+        with:
+          # ---- Platform -------------------------------------------------------
+          platforms: |
+            - name: esp32:esp32
+              source-url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+              version: 3.2.0
+
+          # ---- Board ----------------------------------------------------------
+          fqbn: ${{ matrix.board.fqbn }}
+
+          # ---- Sketch ---------------------------------------------------------
+          sketch-paths: |
+            - firmware/sesame-firmware-main
+
+          # ---- Modular board selection ----------------------------------------
+          # Passes -DBOARD_LOLIN_S2_MINI / -DBOARD_DISTRO_V1 / -DBOARD_DISTRO_V2
+          # to the compiler so board_config.h resolves the right pin layout
+          # without any manual edits to the source code.
+          cli-compile-flags: |
+            - "--build-property"
+            - "compiler.cpp.extra_flags=-D${{ matrix.board.board_define }}"
+
+          # ---- Libraries ------------------------------------------------------
+          # ESP32Servo pinned to 3.0.9 — newer versions have a known multi-servo
+          # channel bug: https://github.com/madhephaestus/ESP32Servo/issues/103
+          libraries: |
+            - name: ESP32Servo
+              version: 3.0.9
+            - name: Adafruit SSD1306
+            - name: Adafruit GFX Library
+
+          # ---- Reports --------------------------------------------------------
+          enable-deltas-report: false
+          enable-warnings-report: true
+          sketches-report-path: sketches-reports
+
+      # ── 4. Upload build artifacts ────────────────────────────────────────────
+      # .bin / .elf files are retained for 30 days and can be flashed directly
+      # from the Actions summary page without a local build environment.
+      - name: Upload compiled firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: sesame-firmware-${{ matrix.board.artifact_suffix }}
+          path: sketches-reports/
+          if-no-files-found: warn
+          retention-days: 30

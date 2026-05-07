@@ -6,6 +6,7 @@
 #include <ESP32Servo.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include "board_config.h"       // Board-specific pins — selected via -DBOARD_* at compile time
 #include "face-bitmaps.h"
 #include "movement-sequences.h"
 #include "captive-portal.h"
@@ -22,22 +23,9 @@
 #define NETWORK_PASS ""  // Your WiFi password
 #define ENABLE_NETWORK_MODE false  // Set to true to enable network connection attempts
 
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET -1
-#define OLED_I2C_ADDR 0x3C
-
-// I2C Pins for Distro Board V2
-//#define I2C_SDA 8
-//#define I2C_SCL 9
-
-// I2C Pins for Distro Board
-//#define I2C_SDA 21
-//#define I2C_SCL 22
-
-// I2C Pins for S2 Mini Board
-#define I2C_SDA 33
-#define I2C_SCL 35
+// Screen dimensions, OLED address, I2C pins, and servo pin arrays are all
+// defined in board_config.h and selected at compile time via -DBOARD_*.
+// See board_config.h for the full list of supported targets.
 
 
 // DNS Server for Captive Portal
@@ -77,20 +65,11 @@ bool networkConnected = false;
 IPAddress networkIP;
 String deviceHostname = "sesame-robot";
 
-// Servo Pins for Distro Board
-// ======================================================================
-// Pin numbers are coorisponding to the ESP32 GPIO pins and may differ based on which board you use.
-// If you are using a different board, please adjust the servoPins array accordingly.
-// ======================================================================
+// Servo pin array — populated from SERVO_PINS defined in board_config.h.
+// To add a new board, add its entry in board_config.h and pass -DBOARD_<NAME>
+// to the compiler; no changes are needed here.
 Servo servos[8];
-// Sesame Distro Board V2 Pinout
-//const int servoPins[8] = {4, 5, 6, 7, 15, 16, 17, 18};
-
-// Sesame Distro Board Pinout
-//const int servoPins[8] = {15, 2, 23, 19, 4, 16, 17, 18};
-
-// Lolin S2 Mini Pinout
-const int servoPins[8] = {1, 2, 4, 6, 8, 10, 13, 14};
+const int servoPins[8] = SERVO_PINS;
 
 // Subtrim values for each servo (offset in degrees)
 int8_t servoSubtrim[8] = {0, 0, 0, 0, 0, 0, 0, 0};
@@ -359,6 +338,7 @@ void handleApiCommand() {
 
 void setup() {
   Serial.begin(115200);
+  Serial.println(F("Board: " BOARD_NAME));
   randomSeed(micros());
   
   // I2C Init for ESP32
