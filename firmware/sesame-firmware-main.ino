@@ -6,10 +6,12 @@
 #include <ESP32Servo.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <Preferences.h>         // NVS-backed credential storage
 #include "board_config.h"       // Board-specific pins — selected via -DBOARD_* at compile time
 #include "face-bitmaps.h"
 #include "movement-sequences.h"
 #include "captive-portal.h"
+#include "wifi-config.h"        // WiFi provisioning UI
 
 // --- Access Point Configuration ---
 // This is the network the Robot will create
@@ -336,6 +338,94 @@ void handleApiCommand() {
   }
 }
 
+// ─── WiFi Provisioning ────────────────────────────────────────────────────────
+Preferences wifiPrefs;
+bool wifiConnecting = false;
+bool wifiFailed     = false;
+
+void tryNetworkConnect(const String& ssid, const String& pass) {
+  wifiConnecting = true;
+  wifiFailed     = false;
+  networkConnected = false;
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.setHostname(deviceHostname.c_str());
+  WiFi.begin(ssid.c_str(), pass.c_str());
+}
+
+void loadSavedWifi() {
+  wifiPrefs.begin("sesame-wifi", true);
+  String ssid = wifiPrefs.getString("ssid", "");
+  String pass = wifiPrefs.getString("pass", "");
+  wifiPrefs.end();
+  if (ssid.length() > 0) {
+    Serial.println("[WiFi] Loading saved credentials for: " + ssid);
+    tryNetworkConnect(ssid, pass);
+  }
+}
+
+void handleWifiPage() {
+  server.send_P(200, "text/html", wifi_config_html);
+}
+
+void handleWifiScan() {
+  int n = WiFi.scanNetworks();
+  String json = "[";
+  for (int i = 0; i < n; i++) {
+    String ssid = WiFi.SSID(i);
+    ssid.replace("\\", "\\\\");
+    ssid.replace("\"", "\\\"");
+    if (i > 0) json += ",";
+    json += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + WiFi.RSSI(i)
+          + ",\"secure\":" + (WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false") + "}";
+  }
+  json += "]";
+  WiFi.scanDelete();
+  server.send(200, "application/json", json);
+}
+
+void handleWifiConnect() {
+  if (server.method() != HTTP_POST) {
+    server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
+    return;
+  }
+  String body = server.arg("plain");
+  // Simple JSON parse for {"ssid":"...","password":"..."}
+  auto extractField = [&](const String& key) -> String {
+    String search = "\"" + key + "\":\"";
+    int s = body.indexOf(search);
+    if (s < 0) return "";
+    s += search.length();
+    int e = body.indexOf("\"", s);
+    return e > s ? body.substring(s, e) : "";
+  };
+  String ssid = extractField("ssid");
+  String pass = extractField("password");
+  if (ssid.length() == 0) {
+    server.send(400, "application/json", "{\"error\":\"Missing ssid\"}");
+    return;
+  }
+  // Persist credentials
+  wifiPrefs.begin("sesame-wifi", false);
+  wifiPrefs.putString("ssid", ssid);
+  wifiPrefs.putString("pass", pass);
+  wifiPrefs.end();
+  tryNetworkConnect(ssid, pass);
+  server.send(200, "application/json", "{\"status\":\"connecting\"}");
+}
+
+void handleWifiStatus() {
+  String json = "{";
+  if (networkConnected) {
+    json += "\"connected\":true,\"ip\":\"" + networkIP.toString() + "\"";
+  } else if (wifiFailed) {
+    json += "\"connected\":false,\"failed\":true";
+  } else {
+    json += "\"connected\":false,\"failed\":false";
+  }
+  json += "}";
+  server.send(200, "application/json", json);
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println(F("Board: " BOARD_NAME));
@@ -423,18 +513,26 @@ void setup() {
   // This redirects ALL domain requests to the ESP32's IP
   dnsServer.start(DNS_PORT, "*", myIP);
 
+  // Load saved WiFi credentials and attempt connection
+  loadSavedWifi();
+
   // Web Server Routes
   server.on("/", handleRoot);
   server.on("/cmd", handleCommandWeb);
   server.on("/getSettings", handleGetSettings);
   server.on("/setSettings", handleSetSettings);
+
+  // WiFi provisioning UI
+  server.on("/wifi",         HTTP_GET,  handleWifiPage);
+  server.on("/wifi/scan",    HTTP_GET,  handleWifiScan);
+  server.on("/wifi/connect", HTTP_POST, handleWifiConnect);
+  server.on("/wifi/status",  HTTP_GET,  handleWifiStatus);
   
   // API endpoints for network communication
-  server.on("/api/status", handleGetStatus);
+  server.on("/api/status",  handleGetStatus);
   server.on("/api/command", handleApiCommand);
   
   // Catch-all route for captive portal
-  // This ensures any URL redirects to the controller page
   server.onNotFound(handleRoot);
   
   server.begin();
@@ -463,6 +561,23 @@ void loop() {
   dnsServer.processNextRequest();
   
   server.handleClient();
+
+  // Poll WiFi connection state after a /wifi/connect request
+  if (wifiConnecting) {
+    wl_status_t s = WiFi.status();
+    if (s == WL_CONNECTED) {
+      networkConnected = true;
+      networkIP        = WiFi.localIP();
+      wifiConnecting   = false;
+      wifiFailed       = false;
+      Serial.println("[WiFi] Connected! IP: " + networkIP.toString());
+    } else if (s == WL_CONNECT_FAILED || s == WL_NO_SSID_AVAIL || s == WL_DISCONNECTED) {
+      wifiFailed     = true;
+      wifiConnecting = false;
+      Serial.println("[WiFi] Connection failed (status " + String(s) + ")");
+    }
+  }
+
   updateAnimatedFace();
   updateIdleBlink();
   updateWifiInfoScroll();
