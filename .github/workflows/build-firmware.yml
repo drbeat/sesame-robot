@@ -94,6 +94,7 @@ jobs:
           # to the compiler so board_config.h resolves the right pin layout
           # without any manual edits to the source code.
           cli-compile-flags: |
+            - "--export-binaries"
             - "--build-property"
             - "compiler.cpp.extra_flags=-D${{ matrix.board.board_define }}"
 
@@ -118,6 +119,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sesame-firmware-${{ matrix.board.artifact_suffix }}
-          path: sketches-reports/
+          path: |
+            firmware/sesame-firmware-main/build/
+            firmware/sesame-firmware-main/**/*.bin
+            firmware/sesame-firmware-main/**/*.elf
           if-no-files-found: warn
           retention-days: 30
