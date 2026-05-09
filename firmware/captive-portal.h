@@ -460,6 +460,11 @@ const char index_html[] PROGMEM = R"rawliteral(
         <input type="color" id="customColor" value="#ff8c42" style="margin-top: 10px; display: none;">
       </div>
 
+      <div class="settings-section">
+        <h4>Network</h4>
+        <button class="btn-settings" style="width: 100%; background: linear-gradient(145deg, #2a8b9d, #1a6b7d);" onclick="window.location.href='/wifi'">WiFi Setup & Scan</button>
+      </div>
+
       <button class="btn-settings" style="width: 100%; margin-top: 20px;" onclick="openMotorControl()">Manual Motor Control</button>
 
       <button class="btn-save" onclick="saveSettings()">Save Settings</button>

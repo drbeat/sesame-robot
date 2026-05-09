@@ -7,15 +7,15 @@ const char wifi_config_html[] PROGMEM = R"=====(
 <title>Sesame · WiFi Setup</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#08080f;--surface:#111118;--card:#1a1a24;--ch:#20202e;--ac:#8b5cf6;--ag:rgba(139,92,246,.28);--teal:#2dd4bf;--tx:#e2e8f0;--mu:#64748b;--bd:#2a2a38;--err:#f87171;--ok:#4ade80}
-body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px}
+:root{--bg:#0a0a0a;--surface:#333;--card:rgba(30,30,30,0.8);--ch:#444;--ac:#ff8c42;--ag:rgba(255,140,66,.28);--teal:#e67a30;--tx:#e0e0e0;--mu:#aaa;--bd:#333;--err:#e74c3c;--ok:#2ecc71;--input-bd:#555}
+body{background:linear-gradient(135deg, #0a0a0a, #1a1a2e);color:var(--tx);font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;margin:0}
 .wrap{width:100%;max-width:440px}
 .hd{text-align:center;margin-bottom:28px}
 .logo{display:inline-flex;align-items:center;gap:10px;margin-bottom:6px}
 .li{width:42px;height:42px;background:linear-gradient(135deg,var(--ac),var(--teal));border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px}
 .lt{font-size:22px;font-weight:700;letter-spacing:-.5px}
 .sub{color:var(--mu);font-size:14px}
-.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:20px;margin-bottom:14px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:16px;padding:20px;margin-bottom:14px;box-shadow:0 4px 20px rgba(0,0,0,0.3)}
 .ct{font-size:12px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
 .nl{display:flex;flex-direction:column;gap:8px}
 .ni{display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface);border:1px solid var(--bd);border-radius:10px;cursor:pointer;transition:all .15s}
@@ -32,18 +32,19 @@ body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSyst
 .fg{margin-bottom:14px}
 label{font-size:13px;color:var(--mu);margin-bottom:6px;display:block}
 .iw{position:relative}
-input[type=text],input[type=password]{width:100%;background:var(--surface);border:1px solid var(--bd);border-radius:10px;color:var(--tx);font-size:14px;padding:11px 14px;outline:none;transition:border-color .15s}
+input[type=text],input[type=password]{width:100%;background:var(--surface);border:1px solid var(--input-bd);border-radius:8px;color:var(--tx);font-size:14px;padding:11px 14px;outline:none;transition:border-color .15s;box-sizing:border-box}
 input:focus{border-color:var(--ac)}
 .hp{padding-right:44px}
 .eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--mu);cursor:pointer;font-size:16px;padding:4px;line-height:1;transition:color .15s}
 .eye:hover{color:var(--tx)}
-.btn{width:100%;padding:13px;border-radius:10px;border:none;font-size:15px;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px}
-.bp{background:linear-gradient(135deg,var(--ac),#7c3aed);color:#fff;box-shadow:0 4px 20px var(--ag)}
-.bp:hover{transform:translateY(-1px);box-shadow:0 6px 28px var(--ag)}
-.bp:active{transform:none}
-.bp:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.bg{background:transparent;color:var(--mu);border:1px solid var(--bd);font-size:13px;padding:7px 14px;width:auto}
-.bg:hover{color:var(--tx);border-color:var(--tx)}
+.btn{width:100%;padding:15px;border-radius:12px;border:none;font-size:16px;font-weight:500;cursor:pointer;transition:all .1s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 8px rgba(0,0,0,0.3)}
+.bp{background:linear-gradient(145deg,#2ecc71,#27ae60);color:#fff}
+.bp:hover{box-shadow:0 6px 12px rgba(46,204,113,.4)}
+.bp:active{transform:translateY(2px);box-shadow:0 2px 4px rgba(0,0,0,0.3)}
+.bp:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.bg{background:linear-gradient(145deg,#555,#444);color:#e0e0e0;font-size:13px;padding:8px 14px;width:auto;border-radius:8px}
+.bg:hover{color:#fff}
+.bg:active{transform:translateY(2px);box-shadow:0 2px 4px rgba(0,0,0,0.3)}
 .sbox{display:flex;align-items:center;gap:12px;padding:14px;border-radius:10px;font-size:14px}
 .sc{background:rgba(139,92,246,.1);border:1px solid var(--ac)}
 .sd{background:rgba(74,222,128,.1);border:1px solid var(--ok)}
