@@ -45,12 +45,35 @@ enum FaceAnimMode : uint8_t {
   FACE_ANIM_BOOMERANG = 2
 };
 
+enum RobotCommand : uint8_t {
+  CMD_NONE = 0,
+  CMD_FORWARD,
+  CMD_BACKWARD,
+  CMD_LEFT,
+  CMD_RIGHT,
+  CMD_REST,
+  CMD_STAND,
+  CMD_WAVE,
+  CMD_DANCE,
+  CMD_SWIM,
+  CMD_POINT,
+  CMD_PUSHUP,
+  CMD_BOW,
+  CMD_CUTE,
+  CMD_FREAKY,
+  CMD_WORM,
+  CMD_SHAKE,
+  CMD_SHRUG,
+  CMD_DEAD,
+  CMD_CRAB
+};
+
 // External globals and helpers used by movement/pose sequences
 extern int frameDelay;
 extern int walkCycles;
-extern String currentCommand;
-extern String getSafeCommand();
-extern void setSafeCommand(const String& cmd);
+extern RobotCommand currentCommand;
+extern RobotCommand getSafeCommand();
+extern void setSafeCommand(RobotCommand cmd);
 
 extern void setServoAngle(uint8_t channel, int angle);
 extern void setFace(const String& faceName);
@@ -58,7 +81,7 @@ extern void setFaceMode(FaceAnimMode mode);
 extern void setFaceWithMode(const String& faceName, FaceAnimMode mode);
 extern void delayWithFace(unsigned long ms);
 extern void enterIdle();
-extern bool pressingCheck(String cmd, int ms);
+extern bool pressingCheck(RobotCommand cmd, int ms);
 
 // Pose/animation prototypes
 void runRestPose();
@@ -117,7 +140,7 @@ inline void runWavePose() {
     setServoAngle(L3, 100); delayWithFace(300); 
   } 
   runStandPose(1); 
-  if (currentCommand == "wave") currentCommand = "";
+  if (currentCommand == CMD_WAVE) currentCommand = CMD_NONE;
 }
 
 inline void runDancePose() { 
@@ -137,7 +160,7 @@ inline void runDancePose() {
     delayWithFace(300); 
   } 
   runStandPose(1); 
-  if (currentCommand == "dance") currentCommand = "";
+  if (currentCommand == CMD_DANCE) currentCommand = CMD_NONE;
 }
 
 inline void runSwimPose() { 
@@ -153,7 +176,7 @@ inline void runSwimPose() {
     delayWithFace(400); 
   } 
   runStandPose(1); 
-  if (currentCommand == "swim") currentCommand = "";
+  if (currentCommand == CMD_SWIM) currentCommand = CMD_NONE;
 }
 
 inline void runPointPose() { 
@@ -165,7 +188,7 @@ inline void runPointPose() {
   setServoAngle(R4, 80); setServoAngle(R3, 170); 
   delayWithFace(2000); 
   runStandPose(1); 
-  if (currentCommand == "point") currentCommand = "";
+  if (currentCommand == CMD_POINT) currentCommand = CMD_NONE;
 }
 
 inline void runPushupPose() {
@@ -187,7 +210,7 @@ inline void runPushupPose() {
     delayWithFace(500);
   }
   runStandPose(1);
-  if (currentCommand == "pushup") currentCommand = "";
+  if (currentCommand == CMD_PUSHUP) currentCommand = CMD_NONE;
 }
 
 inline void runBowPose() {
@@ -208,7 +231,7 @@ inline void runBowPose() {
   setServoAngle(R3, 90);
   delayWithFace(3000);
   runStandPose(1);
-  if (currentCommand == "bow") currentCommand = "";
+  if (currentCommand == CMD_BOW) currentCommand = CMD_NONE;
 }
 
 inline void runCutePose() {
@@ -235,7 +258,7 @@ inline void runCutePose() {
     delayWithFace(300);
   }
   runStandPose(1);
-  if (currentCommand == "cute") currentCommand = "";
+  if (currentCommand == CMD_CUTE) currentCommand = CMD_NONE;
 }
 
 inline void runFreakyPose() {
@@ -257,7 +280,7 @@ inline void runFreakyPose() {
     delayWithFace(400);
   }
   runStandPose(1);
-  if (currentCommand == "freaky") currentCommand = "";
+  if (currentCommand == CMD_FREAKY) currentCommand = CMD_NONE;
 }
 
 inline void runWormPose() {
@@ -275,7 +298,7 @@ inline void runWormPose() {
     delayWithFace(300);
   }
   runStandPose(1);
-  if (currentCommand == "worm") currentCommand = "";
+  if (currentCommand == CMD_WORM) currentCommand = CMD_NONE;
 }
 
 inline void runShakePose() {
@@ -293,7 +316,7 @@ inline void runShakePose() {
     delayWithFace(300);
   }
   runStandPose(1);
-  if (currentCommand == "shake") currentCommand = "";
+  if (currentCommand == CMD_SHAKE) currentCommand = CMD_NONE;
 }
 
 inline void runShrugPose() {
@@ -307,7 +330,7 @@ inline void runShrugPose() {
   setServoAngle(R3, 0); setServoAngle(R4, 180); setServoAngle(L3, 180); setServoAngle(L4, 0);
   delayWithFace(1500);
   runStandPose(1);
-  if (currentCommand == "shrug") currentCommand = "";
+  if (currentCommand == CMD_SHRUG) currentCommand = CMD_NONE;
 }
 
 inline void runDeadPose() {
@@ -316,7 +339,7 @@ inline void runDeadPose() {
   setFaceWithMode("dead", FACE_ANIM_BOOMERANG);
   delayWithFace(200);
   setServoAngle(R3, 90); setServoAngle(R4, 90); setServoAngle(L3, 90); setServoAngle(L4, 90);
-  if (currentCommand == "dead") currentCommand = "";
+  if (currentCommand == CMD_DEAD) currentCommand = CMD_NONE;
 }
 
 inline void runCrabPose() {
@@ -333,7 +356,7 @@ inline void runCrabPose() {
     delayWithFace(300);
   }
   runStandPose(1);
-  if (currentCommand == "crab") currentCommand = "";
+  if (currentCommand == CMD_CRAB) currentCommand = CMD_NONE;
 }
 
 // --- MOVEMENT ANIMATIONS ---
@@ -343,23 +366,23 @@ inline void runWalkPose() {
   // Initial Step
   setServoAngle(R3, 135); setServoAngle(L3, 45);
   setServoAngle(R2, 100); setServoAngle(L1, 25);
-  if (!pressingCheck("forward", frameDelay)) return;
+  if (!pressingCheck(CMD_FORWARD, frameDelay)) return;
   
   for (int i = 0; i < walkCycles; i++) {
     setServoAngle(R3, 135); setServoAngle(L3, 0);
-    if (!pressingCheck("forward", frameDelay)) return;
+    if (!pressingCheck(CMD_FORWARD, frameDelay)) return;
     setServoAngle(L4, 135); setServoAngle(L2, 90);
     setServoAngle(R4, 0); setServoAngle(R1, 180);
-    if (!pressingCheck("forward", frameDelay)) return;    
+    if (!pressingCheck(CMD_FORWARD, frameDelay)) return;    
     setServoAngle(R2, 45); setServoAngle(L1, 90);
-    if (!pressingCheck("forward", frameDelay)) return;
+    if (!pressingCheck(CMD_FORWARD, frameDelay)) return;
     setServoAngle(R4, 45); setServoAngle(L4, 180);
-    if (!pressingCheck("forward", frameDelay)) return;
+    if (!pressingCheck(CMD_FORWARD, frameDelay)) return;
     setServoAngle(R3, 180); setServoAngle(L3, 45);
     setServoAngle(R2, 90); setServoAngle(L1, 0);
-    if (!pressingCheck("forward", frameDelay)) return;  
+    if (!pressingCheck(CMD_FORWARD, frameDelay)) return;  
     setServoAngle(L2, 135); setServoAngle(R1, 90);
-    if (!pressingCheck("forward", frameDelay)) return;
+    if (!pressingCheck(CMD_FORWARD, frameDelay)) return;
   }
   runStandPose(1);
 }
@@ -368,23 +391,23 @@ inline void runWalkPose() {
 inline void runWalkBackward() {
   Serial.println(F("WALK BACK"));
   setFaceWithMode("walk", FACE_ANIM_ONCE);
-  if (!pressingCheck("backward", frameDelay)) return;
+  if (!pressingCheck(CMD_BACKWARD, frameDelay)) return;
   
   for (int i = 0; i < walkCycles; i++) {
     setServoAngle(R3, 135); setServoAngle(L3, 0);
-    if (!pressingCheck("backward", frameDelay)) return;
+    if (!pressingCheck(CMD_BACKWARD, frameDelay)) return;
     setServoAngle(L4, 135); setServoAngle(L2, 135);
     setServoAngle(R4, 0); setServoAngle(R1, 90);
-    if (!pressingCheck("backward", frameDelay)) return;    
+    if (!pressingCheck(CMD_BACKWARD, frameDelay)) return;    
     setServoAngle(R2, 90); setServoAngle(L1, 0);
-    if (!pressingCheck("backward", frameDelay)) return;
+    if (!pressingCheck(CMD_BACKWARD, frameDelay)) return;
     setServoAngle(R4, 45); setServoAngle(L4, 180);
-    if (!pressingCheck("backward", frameDelay)) return;
+    if (!pressingCheck(CMD_BACKWARD, frameDelay)) return;
     setServoAngle(R3, 180); setServoAngle(L3, 45);
     setServoAngle(R2, 45); setServoAngle(L1, 90);
-    if (!pressingCheck("backward", frameDelay)) return;  
+    if (!pressingCheck(CMD_BACKWARD, frameDelay)) return;  
     setServoAngle(L2, 90); setServoAngle(R1, 180);
-    if (!pressingCheck("backward", frameDelay)) return;
+    if (!pressingCheck(CMD_BACKWARD, frameDelay)) return;
   }
   runStandPose(1);
 }
@@ -396,22 +419,22 @@ inline void runTurnLeft() {
   for (int i = 0; i < walkCycles; i++) {
     //legset 1 (R1 L2)
     setServoAngle(R3, 135); setServoAngle(L4, 135); 
-    if (!pressingCheck("left", frameDelay)) return;
+    if (!pressingCheck(CMD_LEFT, frameDelay)) return;
     setServoAngle(R1, 180); setServoAngle(L2, 180); 
-    if (!pressingCheck("left", frameDelay)) return;
+    if (!pressingCheck(CMD_LEFT, frameDelay)) return;
     setServoAngle(R3, 180); setServoAngle(L4, 180); 
-    if (!pressingCheck("left", frameDelay)) return;
+    if (!pressingCheck(CMD_LEFT, frameDelay)) return;
     setServoAngle(R1, 135); setServoAngle(L2, 135);
-    if (!pressingCheck("left", frameDelay)) return;
+    if (!pressingCheck(CMD_LEFT, frameDelay)) return;
       //legset 2 (R2 L1)
     setServoAngle(R4, 45); setServoAngle(L3, 45); 
-    if (!pressingCheck("left", frameDelay)) return;
+    if (!pressingCheck(CMD_LEFT, frameDelay)) return;
     setServoAngle(R2, 90); setServoAngle(L1, 90); 
-    if (!pressingCheck("left", frameDelay)) return;
+    if (!pressingCheck(CMD_LEFT, frameDelay)) return;
     setServoAngle(R4, 0); setServoAngle(L3, 0); 
-    if (!pressingCheck("left", frameDelay)) return;
+    if (!pressingCheck(CMD_LEFT, frameDelay)) return;
     setServoAngle(R2, 45); setServoAngle(L1, 45);
-    if (!pressingCheck("left", frameDelay)) return;  
+    if (!pressingCheck(CMD_LEFT, frameDelay)) return;  
   }
   runStandPose(1);
 }
@@ -422,22 +445,22 @@ inline void runTurnRight() {
   for (int i = 0; i < walkCycles; i++) {
     //legset 2 (R2 L1)
     setServoAngle(R4, 45); setServoAngle(L3, 45); 
-    if (!pressingCheck("right", frameDelay)) return;
+    if (!pressingCheck(CMD_RIGHT, frameDelay)) return;
     setServoAngle(R2, 0); setServoAngle(L1, 0); 
-    if (!pressingCheck("right", frameDelay)) return;
+    if (!pressingCheck(CMD_RIGHT, frameDelay)) return;
     setServoAngle(R4, 0); setServoAngle(L3, 0); 
-    if (!pressingCheck("right", frameDelay)) return;
+    if (!pressingCheck(CMD_RIGHT, frameDelay)) return;
     setServoAngle(R2, 45); setServoAngle(L1, 45);
-    if (!pressingCheck("right", frameDelay)) return;  
+    if (!pressingCheck(CMD_RIGHT, frameDelay)) return;  
     //legset 1 (R1 L2)
     setServoAngle(R3, 135); setServoAngle(L4, 135); 
-    if (!pressingCheck("right", frameDelay)) return;
+    if (!pressingCheck(CMD_RIGHT, frameDelay)) return;
     setServoAngle(R1, 90); setServoAngle(L2, 90); 
-    if (!pressingCheck("right", frameDelay)) return;
+    if (!pressingCheck(CMD_RIGHT, frameDelay)) return;
     setServoAngle(R3, 180); setServoAngle(L4, 180); 
-    if (!pressingCheck("right", frameDelay)) return;
+    if (!pressingCheck(CMD_RIGHT, frameDelay)) return;
     setServoAngle(R1, 135); setServoAngle(L2, 135);
-    if (!pressingCheck("right", frameDelay)) return;
+    if (!pressingCheck(CMD_RIGHT, frameDelay)) return;
   }
   runStandPose(1);
 }

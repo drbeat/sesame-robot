@@ -39,11 +39,11 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 WebServer server(80);
 
 // Global state for animations
-String currentCommand = "";
+RobotCommand currentCommand = CMD_NONE;
 SemaphoreHandle_t commandMutex;
 
-String getSafeCommand() {
-  String cmd = "";
+RobotCommand getSafeCommand() {
+  RobotCommand cmd = CMD_NONE;
   if (xSemaphoreTake(commandMutex, portMAX_DELAY)) {
     cmd = currentCommand;
     xSemaphoreGive(commandMutex);
@@ -51,12 +51,61 @@ String getSafeCommand() {
   return cmd;
 }
 
-void setSafeCommand(const String& cmd) {
+void setSafeCommand(RobotCommand cmd) {
   if (xSemaphoreTake(commandMutex, portMAX_DELAY)) {
     currentCommand = cmd;
     xSemaphoreGive(commandMutex);
   }
 }
+
+RobotCommand parseCommand(const String& cmdStr) {
+  if (cmdStr == "forward") return CMD_FORWARD;
+  if (cmdStr == "backward") return CMD_BACKWARD;
+  if (cmdStr == "left") return CMD_LEFT;
+  if (cmdStr == "right") return CMD_RIGHT;
+  if (cmdStr == "rest") return CMD_REST;
+  if (cmdStr == "stand") return CMD_STAND;
+  if (cmdStr == "wave") return CMD_WAVE;
+  if (cmdStr == "dance") return CMD_DANCE;
+  if (cmdStr == "swim") return CMD_SWIM;
+  if (cmdStr == "point") return CMD_POINT;
+  if (cmdStr == "pushup") return CMD_PUSHUP;
+  if (cmdStr == "bow") return CMD_BOW;
+  if (cmdStr == "cute") return CMD_CUTE;
+  if (cmdStr == "freaky") return CMD_FREAKY;
+  if (cmdStr == "worm") return CMD_WORM;
+  if (cmdStr == "shake") return CMD_SHAKE;
+  if (cmdStr == "shrug") return CMD_SHRUG;
+  if (cmdStr == "dead") return CMD_DEAD;
+  if (cmdStr == "crab") return CMD_CRAB;
+  return CMD_NONE;
+}
+
+const char* commandToString(RobotCommand cmd) {
+  switch (cmd) {
+    case CMD_FORWARD: return "forward";
+    case CMD_BACKWARD: return "backward";
+    case CMD_LEFT: return "left";
+    case CMD_RIGHT: return "right";
+    case CMD_REST: return "rest";
+    case CMD_STAND: return "stand";
+    case CMD_WAVE: return "wave";
+    case CMD_DANCE: return "dance";
+    case CMD_SWIM: return "swim";
+    case CMD_POINT: return "point";
+    case CMD_PUSHUP: return "pushup";
+    case CMD_BOW: return "bow";
+    case CMD_CUTE: return "cute";
+    case CMD_FREAKY: return "freaky";
+    case CMD_WORM: return "worm";
+    case CMD_SHAKE: return "shake";
+    case CMD_SHRUG: return "shrug";
+    case CMD_DEAD: return "dead";
+    case CMD_CRAB: return "crab";
+    default: return "";
+  }
+}
+
 String currentFaceName = "default";
 const unsigned char* const* currentFaceFrames = nullptr;
 uint8_t currentFaceFrameCount = 0;
@@ -185,7 +234,7 @@ void enterIdle();
 void exitIdle();
 void updateIdleBlink();
 int getFaceFpsForName(const String& faceName);
-bool pressingCheck(String cmd, int ms);
+bool pressingCheck(RobotCommand cmd, int ms);
 void handleGetSettings();
 void handleSetSettings();
 void handleApiCommand();
@@ -201,19 +250,19 @@ void handleRoot() {
 void handleCommandWeb() {
   // We send 200 OK immediately so the web browser doesn't hang waiting for animation to finish
   if (server.hasArg("pose")) {
-    currentCommand = server.arg("pose");
+    setSafeCommand(parseCommand(server.arg("pose")));
     recordInput();
     exitIdle();
     server.send(200, "text/plain", "OK"); 
   } 
   else if (server.hasArg("go")) {
-    setSafeCommand(server.arg("go"));
+    setSafeCommand(parseCommand(server.arg("go")));
     recordInput();
     exitIdle();
     server.send(200, "text/plain", "OK");
   } 
   else if (server.hasArg("stop")) {
-    setSafeCommand("");
+    setSafeCommand(CMD_NONE);
     recordInput();
     server.send(200, "text/plain", "OK");
   }
@@ -262,15 +311,16 @@ void handleSetSettings() {
 // API endpoint for network clients to get robot status
 void handleGetStatus() {
   char json[256];
-  String cmd = getSafeCommand();
+  RobotCommand cmd = getSafeCommand();
+  const char* cmdStr = commandToString(cmd);
   if (networkConnected) {
     snprintf(json, sizeof(json), 
       "{\"currentCommand\":\"%s\",\"currentFace\":\"%s\",\"networkConnected\":true,\"apIP\":\"%s\",\"networkIP\":\"%s\"}",
-      cmd.c_str(), currentFaceName.c_str(), WiFi.softAPIP().toString().c_str(), networkIP.toString().c_str());
+      cmdStr, currentFaceName.c_str(), WiFi.softAPIP().toString().c_str(), networkIP.toString().c_str());
   } else {
     snprintf(json, sizeof(json), 
       "{\"currentCommand\":\"%s\",\"currentFace\":\"%s\",\"networkConnected\":false,\"apIP\":\"%s\"}",
-      cmd.c_str(), currentFaceName.c_str(), WiFi.softAPIP().toString().c_str());
+      cmdStr, currentFaceName.c_str(), WiFi.softAPIP().toString().c_str());
   }
   server.send(200, "application/json", json);
 }
@@ -316,11 +366,11 @@ void handleApiCommand() {
   // Execute command
   String cmdStr = String(command);
   if (cmdStr == "stop") {
-    setSafeCommand("");
+    setSafeCommand(CMD_NONE);
     recordInput();
     server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Command stopped\"}");
   } else {
-    setSafeCommand(cmdStr);
+    setSafeCommand(parseCommand(cmdStr));
     recordInput();
     exitIdle();
     server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Command executed\"}");
@@ -570,12 +620,12 @@ void loop() {
         command_buffer[buffer_pos] = '\0';
         int motorNum, angle;
         recordInput();
-        if(strcmp(command_buffer, "run walk") == 0 || strcmp(command_buffer, "rn wf") == 0) { setSafeCommand("forward"); }
-        else if(strcmp(command_buffer, "rn wb") == 0) { setSafeCommand("backward"); }
-        else if(strcmp(command_buffer, "rn tl") == 0) { setSafeCommand("left"); }
-        else if(strcmp(command_buffer, "rn tr") == 0) { setSafeCommand("right"); }
-        else if(strcmp(command_buffer, "run rest") == 0 || strcmp(command_buffer, "rn rs") == 0) { setSafeCommand("rest"); }
-        else if(strcmp(command_buffer, "run stand") == 0 || strcmp(command_buffer, "rn st") == 0) { setSafeCommand("stand"); }
+        if(strcmp(command_buffer, "run walk") == 0 || strcmp(command_buffer, "rn wf") == 0) { setSafeCommand(CMD_FORWARD); }
+        else if(strcmp(command_buffer, "rn wb") == 0) { setSafeCommand(CMD_BACKWARD); }
+        else if(strcmp(command_buffer, "rn tl") == 0) { setSafeCommand(CMD_LEFT); }
+        else if(strcmp(command_buffer, "rn tr") == 0) { setSafeCommand(CMD_RIGHT); }
+        else if(strcmp(command_buffer, "run rest") == 0 || strcmp(command_buffer, "rn rs") == 0) { setSafeCommand(CMD_REST); }
+        else if(strcmp(command_buffer, "run stand") == 0 || strcmp(command_buffer, "rn st") == 0) { setSafeCommand(CMD_STAND); }
         else if(sscanf(command_buffer, "m%d a%d", &motorNum, &angle) == 2) {
           int idx = getServoIndex(String(motorNum));
           if (idx != -1) setServoAngle(idx, angle);
@@ -596,27 +646,34 @@ void robotTask(void *pvParameters) {
     updateAnimatedFace();
     updateIdleBlink();
 
-    String cmd = getSafeCommand();
-    if (cmd != "") {
-      if (cmd == "forward") runWalkPose();
-      else if (cmd == "backward") runWalkBackward();
-      else if (cmd == "left") runTurnLeft();
-      else if (cmd == "right") runTurnRight();
-      else if (cmd == "rest") { runRestPose(); if (getSafeCommand() == "rest") setSafeCommand(""); }
-      else if (cmd == "stand") { runStandPose(1); if (getSafeCommand() == "stand") setSafeCommand(""); }
-      else if (cmd == "wave") runWavePose();
-      else if (cmd == "dance") runDancePose();
-      else if (cmd == "swim") runSwimPose();
-      else if (cmd == "point") runPointPose();
-      else if (cmd == "pushup") runPushupPose();
-      else if (cmd == "bow") runBowPose();
-      else if (cmd == "cute") runCutePose();
-      else if (cmd == "freaky") runFreakyPose();
-      else if (cmd == "worm") runWormPose();
-      else if (cmd == "shake") runShakePose();
-      else if (cmd == "shrug") runShrugPose();
-      else if (cmd == "dead") runDeadPose();
-      else if (cmd == "crab") runCrabPose();
+    RobotCommand cmd = getSafeCommand();
+    switch (cmd) {
+      case CMD_FORWARD: runWalkPose(); break;
+      case CMD_BACKWARD: runWalkBackward(); break;
+      case CMD_LEFT: runTurnLeft(); break;
+      case CMD_RIGHT: runTurnRight(); break;
+      case CMD_REST: 
+        runRestPose(); 
+        if (getSafeCommand() == CMD_REST) setSafeCommand(CMD_NONE); 
+        break;
+      case CMD_STAND: 
+        runStandPose(1); 
+        if (getSafeCommand() == CMD_STAND) setSafeCommand(CMD_NONE); 
+        break;
+      case CMD_WAVE: runWavePose(); break;
+      case CMD_DANCE: runDancePose(); break;
+      case CMD_SWIM: runSwimPose(); break;
+      case CMD_POINT: runPointPose(); break;
+      case CMD_PUSHUP: runPushupPose(); break;
+      case CMD_BOW: runBowPose(); break;
+      case CMD_CUTE: runCutePose(); break;
+      case CMD_FREAKY: runFreakyPose(); break;
+      case CMD_WORM: runWormPose(); break;
+      case CMD_SHAKE: runShakePose(); break;
+      case CMD_SHRUG: runShrugPose(); break;
+      case CMD_DEAD: runDeadPose(); break;
+      case CMD_CRAB: runCrabPose(); break;
+      default: break;
     }
     
     vTaskDelay(pdMS_TO_TICKS(10)); // Yield a bit
@@ -794,7 +851,7 @@ void setServoAngle(uint8_t channel, int angle) {
   }
 }
 
-bool pressingCheck(String cmd, int ms) {
+bool pressingCheck(RobotCommand cmd, int ms) {
   unsigned long start = millis();
   while (millis() - start < ms) {
     updateAnimatedFace();
