@@ -369,7 +369,7 @@ void handleWifiScan() {
     char entry[150];
     snprintf(entry, sizeof(entry), 
       "{\"ssid\":\"%s\",\"rssi\":%d,\"secure\":%s}",
-      ssid.c_str(), WiFi.RSSI(i), (WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false"));
+      ssid.c_str(), (int)WiFi.RSSI(i), (WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false"));
     json += entry;
   }
   json += "]";
@@ -621,7 +621,6 @@ void robotTask(void *pvParameters) {
     
     vTaskDelay(pdMS_TO_TICKS(10)); // Yield a bit
   }
-}
 }
 
 // Function to update the robot's face
