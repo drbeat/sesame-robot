@@ -27,6 +27,18 @@ inline int servoNameToIndex(const String& servo) {
   return -1;
 }
 
+inline int getServoIndex(const String& input) {
+  // Try name first (e.g. "L1")
+  int idx = servoNameToIndex(input);
+  if (idx != -1) return idx;
+  
+  // Try numeric (1-8) - note: toInt() returns 0 on failure
+  int num = input.toInt();
+  if (num >= 1 && num <= 8) return num - 1;
+  
+  return -1;
+}
+
 enum FaceAnimMode : uint8_t {
   FACE_ANIM_LOOP = 0,
   FACE_ANIM_ONCE = 1,
