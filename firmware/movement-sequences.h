@@ -49,6 +49,8 @@ enum FaceAnimMode : uint8_t {
 extern int frameDelay;
 extern int walkCycles;
 extern String currentCommand;
+extern String getSafeCommand();
+extern void setSafeCommand(const String& cmd);
 
 extern void setServoAngle(uint8_t channel, int angle);
 extern void setFace(const String& faceName);

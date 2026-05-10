@@ -40,6 +40,23 @@ WebServer server(80);
 
 // Global state for animations
 String currentCommand = "";
+SemaphoreHandle_t commandMutex;
+
+String getSafeCommand() {
+  String cmd = "";
+  if (xSemaphoreTake(commandMutex, portMAX_DELAY)) {
+    cmd = currentCommand;
+    xSemaphoreGive(commandMutex);
+  }
+  return cmd;
+}
+
+void setSafeCommand(const String& cmd) {
+  if (xSemaphoreTake(commandMutex, portMAX_DELAY)) {
+    currentCommand = cmd;
+    xSemaphoreGive(commandMutex);
+  }
+}
 String currentFaceName = "default";
 const unsigned char* const* currentFaceFrames = nullptr;
 uint8_t currentFaceFrameCount = 0;
@@ -171,11 +188,11 @@ int getFaceFpsForName(const String& faceName);
 bool pressingCheck(String cmd, int ms);
 void handleGetSettings();
 void handleSetSettings();
-void handleGetStatus();
 void handleApiCommand();
 void updateWifiInfoScroll();
 void updateWifiInfoText();
 void recordInput();
+void robotTask(void *pvParameters);
 
 void handleRoot() {
   server.send(200, "text/html", index_html);
@@ -190,13 +207,13 @@ void handleCommandWeb() {
     server.send(200, "text/plain", "OK"); 
   } 
   else if (server.hasArg("go")) {
-    currentCommand = server.arg("go");
+    setSafeCommand(server.arg("go"));
     recordInput();
     exitIdle();
     server.send(200, "text/plain", "OK");
   } 
   else if (server.hasArg("stop")) {
-    currentCommand = "";
+    setSafeCommand("");
     recordInput();
     server.send(200, "text/plain", "OK");
   }
@@ -245,14 +262,15 @@ void handleSetSettings() {
 // API endpoint for network clients to get robot status
 void handleGetStatus() {
   char json[256];
+  String cmd = getSafeCommand();
   if (networkConnected) {
     snprintf(json, sizeof(json), 
       "{\"currentCommand\":\"%s\",\"currentFace\":\"%s\",\"networkConnected\":true,\"apIP\":\"%s\",\"networkIP\":\"%s\"}",
-      currentCommand.c_str(), currentFaceName.c_str(), WiFi.softAPIP().toString().c_str(), networkIP.toString().c_str());
+      cmd.c_str(), currentFaceName.c_str(), WiFi.softAPIP().toString().c_str(), networkIP.toString().c_str());
   } else {
     snprintf(json, sizeof(json), 
       "{\"currentCommand\":\"%s\",\"currentFace\":\"%s\",\"networkConnected\":false,\"apIP\":\"%s\"}",
-      currentCommand.c_str(), currentFaceName.c_str(), WiFi.softAPIP().toString().c_str());
+      cmd.c_str(), currentFaceName.c_str(), WiFi.softAPIP().toString().c_str());
   }
   server.send(200, "application/json", json);
 }
@@ -298,11 +316,11 @@ void handleApiCommand() {
   // Execute command
   String cmdStr = String(command);
   if (cmdStr == "stop") {
-    currentCommand = "";
+    setSafeCommand("");
     recordInput();
     server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Command stopped\"}");
   } else {
-    currentCommand = cmdStr;
+    setSafeCommand(cmdStr);
     recordInput();
     exitIdle();
     server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Command executed\"}");
@@ -508,15 +526,20 @@ void setup() {
   setFace("rest");
   
   Serial.println(F("HTTP server & Captive Portal started."));
+
+  // Initialize command mutex
+  commandMutex = xSemaphoreCreateMutex();
+  
+  // Start the background robot task on Core 0
+  // Stack size: 8192, Priority: 1, Core: 0
+  xTaskCreatePinnedToCore(robotTask, "robotTask", 8192, NULL, 1, NULL, 0);
 }
 
 void loop() {
-  // Process DNS requests for captive portal
+  server.handleClient();
   dnsServer.processNextRequest();
   
-  server.handleClient();
-
-  // Poll WiFi connection state after a /wifi/connect request
+  // Poll WiFi connection state
   if (wifiConnecting) {
     wl_status_t s = WiFi.status();
     if (s == WL_CONNECTED) {
@@ -524,46 +547,22 @@ void loop() {
       networkIP        = WiFi.localIP();
       wifiConnecting   = false;
       wifiFailed       = false;
-      updateWifiInfoText(); // Update scrolling text with new IP
+      updateWifiInfoText(); 
       Serial.println("[WiFi] Connected! IP: " + networkIP.toString());
     } else if (s == WL_CONNECT_FAILED || s == WL_NO_SSID_AVAIL || s == WL_DISCONNECTED) {
       wifiFailed     = true;
       wifiConnecting = false;
-      updateWifiInfoText(); // Update scrolling text to show failure
+      updateWifiInfoText();
       Serial.println("[WiFi] Connection failed (status " + String(s) + ")");
     }
   }
 
-  updateAnimatedFace();
-  updateIdleBlink();
+  // Update scrolling info text periodically in main loop (UI)
   updateWifiInfoScroll();
 
-  if (currentCommand != "") {
-    String cmd = currentCommand;
-    if (cmd == "forward") runWalkPose();
-    else if (cmd == "backward") runWalkBackward();
-    else if (cmd == "left") runTurnLeft();
-    else if (cmd == "right") runTurnRight();
-    else if (cmd == "rest") { runRestPose(); if (currentCommand == "rest") currentCommand = ""; }
-    else if (cmd == "stand") { runStandPose(1); if (currentCommand == "stand") currentCommand = ""; }
-    else if (cmd == "wave") runWavePose();
-    else if (cmd == "dance") runDancePose();
-    else if (cmd == "swim") runSwimPose();
-    else if (cmd == "point") runPointPose();
-    else if (cmd == "pushup") runPushupPose();
-    else if (cmd == "bow") runBowPose();
-    else if (cmd == "cute") runCutePose();
-    else if (cmd == "freaky") runFreakyPose();
-    else if (cmd == "worm") runWormPose();
-    else if (cmd == "shake") runShakePose();
-    else if (cmd == "shrug") runShrugPose();
-    else if (cmd == "dead") runDeadPose();
-    else if (cmd == "crab") runCrabPose();
-  }
-  
-  // Serial CLI for debugging (can be used to diagnose servo position issues and wiring)
+  // Serial CLI for debugging
   if (Serial.available()) {
-    static char command_buffer[32];
+    static char command_buffer[64];
     static byte buffer_pos = 0;
     char c = Serial.read();
     if (c == '\n' || c == '\r') {
@@ -571,84 +570,58 @@ void loop() {
         command_buffer[buffer_pos] = '\0';
         int motorNum, angle;
         recordInput();
-        if(strcmp(command_buffer, "run walk") == 0 || strcmp(command_buffer, "rn wf") == 0) { currentCommand = "forward"; runWalkPose(); currentCommand = ""; }
-        else if(strcmp(command_buffer, "rn wb") == 0) { currentCommand = "backward"; runWalkBackward(); currentCommand = ""; }
-        else if(strcmp(command_buffer, "rn tl") == 0) { currentCommand = "left"; runTurnLeft(); currentCommand = ""; }
-        else if(strcmp(command_buffer, "rn tr") == 0) { currentCommand = "right"; runTurnRight(); currentCommand = ""; }
-        else if(strcmp(command_buffer, "run rest") == 0 || strcmp(command_buffer, "rn rs") == 0) runRestPose();
-        else if(strcmp(command_buffer, "run stand") == 0 || strcmp(command_buffer, "rn st") == 0) runStandPose(1);
-        else if(strcmp(command_buffer, "rn wv") == 0) { currentCommand = "wave"; runWavePose(); }
-        else if(strcmp(command_buffer, "rn dn") == 0) { currentCommand = "dance"; runDancePose(); }
-        else if(strcmp(command_buffer, "rn sw") == 0) { currentCommand = "swim"; runSwimPose(); }
-        else if(strcmp(command_buffer, "rn pt") == 0) { currentCommand = "point"; runPointPose(); }
-        else if(strcmp(command_buffer, "rn pu") == 0) { currentCommand = "pushup"; runPushupPose(); }
-        else if(strcmp(command_buffer, "rn bw") == 0) { currentCommand = "bow"; runBowPose(); }
-        else if(strcmp(command_buffer, "rn ct") == 0) { currentCommand = "cute"; runCutePose(); }
-        else if(strcmp(command_buffer, "rn fk") == 0) { currentCommand = "freaky"; runFreakyPose(); }
-        else if(strcmp(command_buffer, "rn wm") == 0) { currentCommand = "worm"; runWormPose(); }
-        else if(strcmp(command_buffer, "rn sk") == 0) { currentCommand = "shake"; runShakePose(); }
-        else if(strcmp(command_buffer, "rn sg") == 0) { currentCommand = "shrug"; runShrugPose(); }
-        else if(strcmp(command_buffer, "rn dd") == 0) { currentCommand = "dead"; runDeadPose(); }
-        else if(strcmp(command_buffer, "rn cb") == 0) { currentCommand = "crab"; runCrabPose(); }
-        else if (strcmp(command_buffer, "subtrim") == 0 || strcmp(command_buffer, "st") == 0) {
-          Serial.println("Subtrim values:");
-          for (int i = 0; i < 8; i++) {
-            Serial.print("Motor "); Serial.print(i); Serial.print(": ");
-            if (servoSubtrim[i] >= 0) Serial.print("+");
-            Serial.println(servoSubtrim[i]);
-          }
-        }
-        else if (strcmp(command_buffer, "subtrim save") == 0 || strcmp(command_buffer, "st save") == 0) {
-          Serial.println("Copy and paste this into your code:");
-          Serial.print("int8_t servoSubtrim[8] = {");
-          for (int i = 0; i < 8; i++) {
-            Serial.print(servoSubtrim[i]);
-            if (i < 7) Serial.print(", ");
-          }
-          Serial.println("};");
-        }
-        else if (strncmp(command_buffer, "subtrim reset", 13) == 0 || strncmp(command_buffer, "st reset", 8) == 0) {
-          for (int i = 0; i < 8; i++) servoSubtrim[i] = 0;
-          Serial.println("All subtrim values reset to 0");
-        }
-        else if (strncmp(command_buffer, "subtrim ", 8) == 0 || strncmp(command_buffer, "st ", 3) == 0) {
-          const char* params = (command_buffer[1] == 't') ? command_buffer + 3 : command_buffer + 8;
-          int trimMotor, trimValue;
-          if (sscanf(params, "%d %d", &trimMotor, &trimValue) == 2) {
-            if (trimMotor >= 0 && trimMotor < 8) {
-              if (trimValue >= -90 && trimValue <= 90) {
-                servoSubtrim[trimMotor] = trimValue;
-                Serial.print("Motor "); Serial.print(trimMotor); Serial.print(" subtrim set to ");
-                if (trimValue >= 0) Serial.print("+");
-                Serial.println(trimValue);
-              } else {
-                Serial.println("Subtrim value must be between -90 and +90");
-              }
-            } else {
-              Serial.println("Invalid motor number (0-7)");
-            }
-          }
-        }
-        else if (strncmp(command_buffer, "all ", 4) == 0) {
-             if (sscanf(command_buffer + 4, "%d", &angle) == 1) {
-                 for (int i = 0; i < 8; i++) setServoAngle(i, angle);
-                 Serial.print("All servos set to "); Serial.println(angle);
-             }
-        }
-        else if (sscanf(command_buffer, "%d %d", &motorNum, &angle) == 2) {
-             if (motorNum >= 0 && motorNum < 8) {
-                 setServoAngle(motorNum, angle);
-                 Serial.print("Servo "); Serial.print(motorNum); Serial.print(" set to "); Serial.println(angle);
-             } else {
-                 Serial.println("Invalid motor number (0-7)");
-             }
+        if(strcmp(command_buffer, "run walk") == 0 || strcmp(command_buffer, "rn wf") == 0) { setSafeCommand("forward"); }
+        else if(strcmp(command_buffer, "rn wb") == 0) { setSafeCommand("backward"); }
+        else if(strcmp(command_buffer, "rn tl") == 0) { setSafeCommand("left"); }
+        else if(strcmp(command_buffer, "rn tr") == 0) { setSafeCommand("right"); }
+        else if(strcmp(command_buffer, "run rest") == 0 || strcmp(command_buffer, "rn rs") == 0) { setSafeCommand("rest"); }
+        else if(strcmp(command_buffer, "run stand") == 0 || strcmp(command_buffer, "rn st") == 0) { setSafeCommand("stand"); }
+        else if(sscanf(command_buffer, "m%d a%d", &motorNum, &angle) == 2) {
+          int idx = getServoIndex(String(motorNum));
+          if (idx != -1) setServoAngle(idx, angle);
         }
         buffer_pos = 0;
       }
-    } else if (buffer_pos < sizeof(command_buffer) - 1) {
+    } else if (buffer_pos < 63) {
       command_buffer[buffer_pos++] = c;
     }
   }
+  
+  yield();
+}
+
+// Dedicated task for animations and movement on Core 0
+void robotTask(void *pvParameters) {
+  while (true) {
+    updateAnimatedFace();
+    updateIdleBlink();
+
+    String cmd = getSafeCommand();
+    if (cmd != "") {
+      if (cmd == "forward") runWalkPose();
+      else if (cmd == "backward") runWalkBackward();
+      else if (cmd == "left") runTurnLeft();
+      else if (cmd == "right") runTurnRight();
+      else if (cmd == "rest") { runRestPose(); if (getSafeCommand() == "rest") setSafeCommand(""); }
+      else if (cmd == "stand") { runStandPose(1); if (getSafeCommand() == "stand") setSafeCommand(""); }
+      else if (cmd == "wave") runWavePose();
+      else if (cmd == "dance") runDancePose();
+      else if (cmd == "swim") runSwimPose();
+      else if (cmd == "point") runPointPose();
+      else if (cmd == "pushup") runPushupPose();
+      else if (cmd == "bow") runBowPose();
+      else if (cmd == "cute") runCutePose();
+      else if (cmd == "freaky") runFreakyPose();
+      else if (cmd == "worm") runWormPose();
+      else if (cmd == "shake") runShakePose();
+      else if (cmd == "shrug") runShrugPose();
+      else if (cmd == "dead") runDeadPose();
+      else if (cmd == "crab") runCrabPose();
+    }
+    
+    vTaskDelay(pdMS_TO_TICKS(10)); // Yield a bit
+  }
+}
 }
 
 // Function to update the robot's face
@@ -764,9 +737,7 @@ void delayWithFace(unsigned long ms) {
   unsigned long start = millis();
   while (millis() - start < ms) {
     updateAnimatedFace();
-    server.handleClient();
-    dnsServer.processNextRequest();
-    delay(5);
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
 
@@ -827,14 +798,12 @@ void setServoAngle(uint8_t channel, int angle) {
 bool pressingCheck(String cmd, int ms) {
   unsigned long start = millis();
   while (millis() - start < ms) {
-    server.handleClient();
-    dnsServer.processNextRequest();
     updateAnimatedFace();
-    if (currentCommand != cmd) {
+    if (getSafeCommand() != cmd) {
       runStandPose(1);
       return false;
     }
-    yield();
+    vTaskDelay(pdMS_TO_TICKS(5));
   }
   return true;
 }
