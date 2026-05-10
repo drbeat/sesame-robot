@@ -284,10 +284,14 @@ void handleCommandWeb() {
 }
 
 void handleGetSettings() {
-  char json[150];
-  snprintf(json, sizeof(json), 
-    "{\"frameDelay\":%d,\"walkCycles\":%d,\"motorCurrentDelay\":%d,\"faceFps\":%d,\"enableNetworkMode\":%s}",
-    frameDelay, walkCycles, motorCurrentDelay, faceFps, enableNetworkMode ? "true" : "false");
+  JsonDocument doc;
+  doc["frameDelay"] = frameDelay;
+  doc["walkCycles"] = walkCycles;
+  doc["motorCurrentDelay"] = motorCurrentDelay;
+  doc["faceFps"] = faceFps;
+  doc["enableNetworkMode"] = enableNetworkMode;
+  String json;
+  serializeJson(doc, json);
   server.send(200, "application/json", json);
 }
 
@@ -310,18 +314,17 @@ void handleSetSettings() {
 
 // API endpoint for network clients to get robot status
 void handleGetStatus() {
-  char json[256];
+  JsonDocument doc;
   RobotCommand cmd = getSafeCommand();
-  const char* cmdStr = commandToString(cmd);
+  doc["currentCommand"] = commandToString(cmd);
+  doc["currentFace"] = currentFaceName;
+  doc["networkConnected"] = networkConnected;
+  doc["apIP"] = WiFi.softAPIP().toString();
   if (networkConnected) {
-    snprintf(json, sizeof(json), 
-      "{\"currentCommand\":\"%s\",\"currentFace\":\"%s\",\"networkConnected\":true,\"apIP\":\"%s\",\"networkIP\":\"%s\"}",
-      cmdStr, currentFaceName.c_str(), WiFi.softAPIP().toString().c_str(), networkIP.toString().c_str());
-  } else {
-    snprintf(json, sizeof(json), 
-      "{\"currentCommand\":\"%s\",\"currentFace\":\"%s\",\"networkConnected\":false,\"apIP\":\"%s\"}",
-      cmdStr, currentFaceName.c_str(), WiFi.softAPIP().toString().c_str());
+    doc["networkIP"] = networkIP.toString();
   }
+  String json;
+  serializeJson(doc, json);
   server.send(200, "application/json", json);
 }
 
@@ -408,21 +411,16 @@ void handleWifiPage() {
 
 void handleWifiScan() {
   int n = WiFi.scanNetworks();
-  String json = "[";
-  json.reserve(n * 128); // Pre-allocate memory to avoid fragmentation
+  JsonDocument doc;
+  JsonArray array = doc.to<JsonArray>();
   for (int i = 0; i < n; i++) {
-    String ssid = WiFi.SSID(i);
-    ssid.replace("\\", "\\\\");
-    ssid.replace("\"", "\\\"");
-    if (i > 0) json += ",";
-    
-    char entry[150];
-    snprintf(entry, sizeof(entry), 
-      "{\"ssid\":\"%s\",\"rssi\":%d,\"secure\":%s}",
-      ssid.c_str(), (int)WiFi.RSSI(i), (WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false"));
-    json += entry;
+    JsonObject obj = array.add<JsonObject>();
+    obj["ssid"] = WiFi.SSID(i);
+    obj["rssi"] = WiFi.RSSI(i);
+    obj["secure"] = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
   }
-  json += "]";
+  String json;
+  serializeJson(doc, json);
   WiFi.scanDelete();
   server.send(200, "application/json", json);
 }
@@ -460,12 +458,15 @@ void handleWifiConnect() {
 }
 
 void handleWifiStatus() {
-  char json[100];
+  JsonDocument doc;
+  doc["connected"] = networkConnected;
   if (networkConnected) {
-    snprintf(json, sizeof(json), "{\"connected\":true,\"ip\":\"%s\"}", networkIP.toString().c_str());
+    doc["ip"] = networkIP.toString();
   } else {
-    snprintf(json, sizeof(json), "{\"connected\":false,\"failed\":%s}", wifiFailed ? "true" : "false");
+    doc["failed"] = wifiFailed;
   }
+  String json;
+  serializeJson(doc, json);
   server.send(200, "application/json", json);
 }
 
