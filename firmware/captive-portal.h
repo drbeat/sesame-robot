@@ -358,8 +358,62 @@ const char index_html[] PROGMEM = R"rawliteral(
         max-width: 450px;
         margin: 0;
       }
-    }
-  </style>
+      /* Toggle Switch */
+      .switch-container {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 10px;
+      }
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+      }
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #333;
+        transition: .3s;
+        border-radius: 24px;
+        border: 1px solid #555;
+      }
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 16px;
+        width: 16px;
+        left: 3px;
+        bottom: 3px;
+        background-color: #aaa;
+        transition: .3s;
+        border-radius: 50%;
+      }
+      input:checked + .slider {
+        background-color: var(--content-color-glow);
+        border-color: var(--content-color);
+      }
+      input:checked + .slider:before {
+        transform: translateX(20px);
+        background-color: var(--content-color);
+      }
+      
+      .reboot-hint {
+        font-size: 11px;
+        color: #888;
+        margin-top: 8px;
+        font-style: italic;
+      }
 </head>
 <body>
   <h2>Sesame Controller</h2>
@@ -462,7 +516,15 @@ const char index_html[] PROGMEM = R"rawliteral(
 
       <div class="settings-section">
         <h4>Network</h4>
-        <button class="btn-settings" style="width: 100%; background: linear-gradient(145deg, #2a8b9d, #1a6b7d);" onclick="window.location.href='/wifi'">WiFi Setup & Scan</button>
+        <div class="switch-container">
+          <label style="margin-top: 0;">Enable Network Mode:</label>
+          <label class="switch">
+            <input type="checkbox" id="enableNetworkMode">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="reboot-hint">Note: Changing this requires a reboot to take effect.</div>
+        <button class="btn-settings" style="width: 100%; margin-top: 15px; background: linear-gradient(145deg, #2a8b9d, #1a6b7d);" onclick="window.location.href='/wifi'">WiFi Setup & Scan</button>
       </div>
 
       <button class="btn-settings" style="width: 100%; margin-top: 20px;" onclick="openMotorControl()">Manual Motor Control</button>
@@ -637,6 +699,7 @@ function openSettings() {
     document.getElementById('walkCycles').value = data.walkCycles || 10;
     document.getElementById('motorCurrentDelay').value = data.motorCurrentDelay || 20;
     document.getElementById('motorSpeed').value = data.motorSpeed || 'medium';
+    document.getElementById('enableNetworkMode').checked = data.enableNetworkMode || false;
     
     // Load theme settings
     const savedColor = localStorage.getItem('themeColor') || '#ff8c42';
@@ -662,9 +725,9 @@ function openSettings() {
     document.getElementById('settingsPanel').style.display = 'block';
   }).catch(() => {
     // Fallback if settings endpoint doesn't exist yet
-    document.getElementById('frameDelay').value = 100;
     document.getElementById('walkCycles').value = 10;
     document.getElementById('motorCurrentDelay').value = 20;
+    document.getElementById('enableNetworkMode').checked = false;
     
     const savedColor = localStorage.getItem('themeColor') || '#ff8c42';
     document.getElementById('themeColor').value = savedColor;
@@ -705,6 +768,7 @@ function saveSettings() {
   const wc = document.getElementById('walkCycles').value;
   const mcd = document.getElementById('motorCurrentDelay').value;
   const ms = document.getElementById('motorSpeed').value;
+  const enm = document.getElementById('enableNetworkMode').checked;
   
   // Save theme color
   const colorSelect = document.getElementById('themeColor');
@@ -713,7 +777,7 @@ function saveSettings() {
   localStorage.setItem('themeColor', themeColor);
   applyTheme(themeColor);
   
-  fetch(`/setSettings?frameDelay=${fd}&walkCycles=${wc}&motorCurrentDelay=${mcd}&motorSpeed=${ms}`)
+  fetch(`/setSettings?frameDelay=${fd}&walkCycles=${wc}&motorCurrentDelay=${mcd}&motorSpeed=${ms}&enableNetworkMode=${enm}`)
     .then(() => closeSettings())
     .catch(() => closeSettings());
 }

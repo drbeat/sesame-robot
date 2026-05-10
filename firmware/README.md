@@ -72,13 +72,15 @@ This document provides technical information on the firmware architecture, contr
    - **If you built with the Lolin S2 Mini:** Uncomment the S2 Mini `servoPins` array and `I2C_SDA`/`I2C_SCL` defines. Comment out the Distro Board section.
    - **If you built with the Distro Board V1 or V2 and ESP32-DevKitC-32E:** Uncomment the Distro Board `servoPins` array and `I2C_SDA`/`I2C_SCL` defines. Comment out the S2 Mini section. (V1 and V2 use the same pin configuration)
 7. **(Optional) Configure network mode**:
-   - If you want the robot to connect to your WiFi network (for API access and remote control), edit the network configuration section (around line 17-22):
+   - By default, the robot starts in Access Point mode. To connect it to your home WiFi:
+   - Connect to the robot's AP (see below), go to **Settings**, and toggle **Enable Network Mode**.
+   - Use the **WiFi Setup & Scan** button to scan for your network and enter credentials.
+   - You can still pre-configure a network in [sesame-firmware-main.ino](sesame-firmware-main.ino) (around line 17-22):
    ```cpp
    #define NETWORK_SSID "YourNetworkName"  // Your WiFi network name
    #define NETWORK_PASS "YourPassword"     // Your WiFi password
-   #define ENABLE_NETWORK_MODE true        // Set to true to enable
    ```
-   - Leave `ENABLE_NETWORK_MODE false` to use Access Point mode only
+   - Note: The `enableNetworkMode` setting is now persisted in NVS and can be changed via the web UI without reflashing.
 8. **Upload the firmware**:
    - Click the **Upload** button (→) in Arduino IDE
    - Wait for compilation and upload to complete
@@ -95,7 +97,8 @@ This document provides technical information on the firmware architecture, contr
 - **Port not found**: Install the appropriate USB drivers (CP210x for S2 Mini, CH340 for some ESP32 boards). Windows 10/11 usually includes these.
 - **Robot not moving**: Check power supply and servo connections; increase `motorCurrentDelay` in web settings if brownouts occur
 - **Can't connect to network**: 
-  - Verify `ENABLE_NETWORK_MODE` is set to `true` and SSID/password are correct
+  - Verify **Enable Network Mode** is turned ON in the web settings.
+  - Check if the SSID and password are correct (via Serial Monitor or WiFi Setup page).
   - Check Serial Monitor for connection status - look for "Connected to network!" or error messages
   - Ensure your WiFi network is 2.4GHz (ESP32 does not support 5GHz)
   - Try increasing the connection timeout in the code (currently 10 seconds / 20 attempts)
@@ -175,11 +178,14 @@ Connect to this network and navigate to any website to access the captive portal
 ### Network Mode (Optional)
 To connect the robot to your home or office WiFi network:
 
-1. **Enable Network Mode** in [sesame-firmware-main.ino](sesame-firmware-main.ino):
+1. **Enable Network Mode** via the Web Interface:
+   - Direct your browser to the robot's IP (or use the AP portal).
+   - Open **Settings** and toggle **Enable Network Mode**.
+   - Use the **WiFi Setup & Scan** tool to connect to your network.
+   - Alternatively, pre-set your credentials in [sesame-firmware-main.ino](sesame-firmware-main.ino):
    ```cpp
    #define NETWORK_SSID "YourNetworkName"  // Your WiFi network name
    #define NETWORK_PASS "YourPassword"     // Your WiFi password
-   #define ENABLE_NETWORK_MODE true        // Set to true to enable
    ```
 
 2. **Flash the updated firmware** to your robot.

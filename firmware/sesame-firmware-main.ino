@@ -23,7 +23,7 @@
 // Leave NETWORK_SSID empty to disable station mode
 #define NETWORK_SSID ""  // Your WiFi network name
 #define NETWORK_PASS ""  // Your WiFi password
-#define ENABLE_NETWORK_MODE false  // Set to true to enable network connection attempts
+bool enableNetworkMode = false;  // Loaded from NVS in setup()
 
 // Screen dimensions, OLED address, I2C pins, and servo pin arrays are all
 // defined in board_config.h and selected at compile time via -DBOARD_*.
@@ -224,7 +224,8 @@ void handleGetSettings() {
   json += "\"frameDelay\":" + String(frameDelay) + ",";
   json += "\"walkCycles\":" + String(walkCycles) + ",";
   json += "\"motorCurrentDelay\":" + String(motorCurrentDelay) + ",";
-  json += "\"faceFps\":" + String(faceFps);
+  json += "\"faceFps\":" + String(faceFps) + ",";
+  json += "\"enableNetworkMode\":" + String(enableNetworkMode ? "true" : "false");
   json += "}";
   server.send(200, "application/json", json);
 }
@@ -234,6 +235,15 @@ void handleSetSettings() {
   if (server.hasArg("walkCycles")) walkCycles = server.arg("walkCycles").toInt();
   if (server.hasArg("motorCurrentDelay")) motorCurrentDelay = server.arg("motorCurrentDelay").toInt();
   if (server.hasArg("faceFps")) faceFps = (int)max(1L, server.arg("faceFps").toInt());
+  
+  if (server.hasArg("enableNetworkMode")) {
+    enableNetworkMode = (server.arg("enableNetworkMode") == "true");
+    Preferences settings;
+    settings.begin("sesame-settings", false);
+    settings.putBool("net_mode", enableNetworkMode);
+    settings.end();
+  }
+  
   server.send(200, "text/plain", "OK");
 }
 
@@ -448,8 +458,14 @@ void setup() {
   display.display();
 
   // --- WIFI CONFIGURATION ---
+  // Load settings from NVS
+  Preferences settings;
+  settings.begin("sesame-settings", true);
+  enableNetworkMode = settings.getBool("net_mode", false);
+  settings.end();
+
   // Try to connect to network first if configured
-  if (ENABLE_NETWORK_MODE && String(NETWORK_SSID).length() > 0) {
+  if (enableNetworkMode && String(NETWORK_SSID).length() > 0) {
     Serial.println("Attempting to connect to network: " + String(NETWORK_SSID));
     WiFi.mode(WIFI_AP_STA); // Enable both AP and Station modes
     WiFi.setHostname(deviceHostname.c_str());
