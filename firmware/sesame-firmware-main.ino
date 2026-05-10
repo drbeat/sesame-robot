@@ -12,6 +12,7 @@
 #include "movement-sequences.h"
 #include "captive-portal.h"
 #include "wifi-config.h"        // WiFi provisioning UI
+#include <ArduinoJson.h>        // Required for robust JSON parsing
 
 // --- Access Point Configuration ---
 // This is the network the Robot will create
@@ -173,6 +174,7 @@ void handleSetSettings();
 void handleGetStatus();
 void handleApiCommand();
 void updateWifiInfoScroll();
+void updateWifiInfoText();
 void recordInput();
 
 void handleRoot() {
@@ -220,13 +222,10 @@ void handleCommandWeb() {
 }
 
 void handleGetSettings() {
-  String json = "{";
-  json += "\"frameDelay\":" + String(frameDelay) + ",";
-  json += "\"walkCycles\":" + String(walkCycles) + ",";
-  json += "\"motorCurrentDelay\":" + String(motorCurrentDelay) + ",";
-  json += "\"faceFps\":" + String(faceFps) + ",";
-  json += "\"enableNetworkMode\":" + String(enableNetworkMode ? "true" : "false");
-  json += "}";
+  char json[150];
+  snprintf(json, sizeof(json), 
+    "{\"frameDelay\":%d,\"walkCycles\":%d,\"motorCurrentDelay\":%d,\"faceFps\":%d,\"enableNetworkMode\":%s}",
+    frameDelay, walkCycles, motorCurrentDelay, faceFps, enableNetworkMode ? "true" : "false");
   server.send(200, "application/json", json);
 }
 
@@ -249,99 +248,65 @@ void handleSetSettings() {
 
 // API endpoint for network clients to get robot status
 void handleGetStatus() {
-  String json = "{";
-  json += "\"currentCommand\":\"" + currentCommand + "\",";
-  json += "\"currentFace\":\"" + currentFaceName + "\",";
-  json += "\"networkConnected\":" + String(networkConnected ? "true" : "false") + ",";
-  json += "\"apIP\":\"" + WiFi.softAPIP().toString() + "\"";
+  char json[256];
   if (networkConnected) {
-    json += ",\"networkIP\":\"" + networkIP.toString() + "\"";
+    snprintf(json, sizeof(json), 
+      "{\"currentCommand\":\"%s\",\"currentFace\":\"%s\",\"networkConnected\":true,\"apIP\":\"%s\",\"networkIP\":\"%s\"}",
+      currentCommand.c_str(), currentFaceName.c_str(), WiFi.softAPIP().toString().c_str(), networkIP.toString().c_str());
+  } else {
+    snprintf(json, sizeof(json), 
+      "{\"currentCommand\":\"%s\",\"currentFace\":\"%s\",\"networkConnected\":false,\"apIP\":\"%s\"}",
+      currentCommand.c_str(), currentFaceName.c_str(), WiFi.softAPIP().toString().c_str());
   }
-  json += "}";
   server.send(200, "application/json", json);
 }
 
-// API endpoint for network clients to send commands (JSON-based)
 void handleApiCommand() {
   if (server.method() != HTTP_POST) {
     server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
     return;
   }
   
-  String body = server.arg("plain");
-  
-  Serial.println("API Command received:");
-  Serial.println(body);
-  
-  // Check for face-only command (no movement)
-  int faceOnlyStart = body.indexOf("\"face\":\"");
-  if (faceOnlyStart == -1) {
-    faceOnlyStart = body.indexOf("\"face\": \"");
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+
+  if (error) {
+    Serial.print("JSON Parse Error: ");
+    Serial.println(error.c_str());
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
   }
-  
-  // If we have a face but no command field, it's face-only
-  bool faceOnly = (faceOnlyStart > 0 && body.indexOf("\"command\":") == -1 && body.indexOf("\"command\": ") == -1);
-  
-  String command = "";
-  String face = "";
-  
-  // Parse face
-  if (faceOnlyStart > 0) {
-    faceOnlyStart = body.indexOf("\"", faceOnlyStart + 6) + 1;
-    int faceEnd = body.indexOf("\"", faceOnlyStart);
-    if (faceEnd > faceOnlyStart) {
-      face = body.substring(faceOnlyStart, faceEnd);
-      Serial.print("Parsed face: ");
-      Serial.println(face);
-    }
-  }
-  
-  // Parse command (if not face-only)
-  if (!faceOnly) {
-    int cmdStart = body.indexOf("\"command\":\"");
-    if (cmdStart == -1) {
-      cmdStart = body.indexOf("\"command\": \"");
-    }
-    
-    if (cmdStart == -1) {
-      Serial.println("Error: command field not found");
-      server.send(400, "application/json", "{\"error\":\"Missing command field\"}");
-      return;
-    }
-    
-    cmdStart = body.indexOf("\"", cmdStart + 10) + 1;
-    int cmdEnd = body.indexOf("\"", cmdStart);
-    
-    if (cmdEnd <= cmdStart) {
-      Serial.println("Error: invalid command format");
-      server.send(400, "application/json", "{\"error\":\"Invalid command format\"}");
-      return;
-    }
-    
-    command = body.substring(cmdStart, cmdEnd);
-    Serial.print("Parsed command: ");
-    Serial.println(command);
-  }
+
+  const char* command = doc["command"];
+  const char* face = doc["face"];
   
   // Set face if provided
-  if (face.length() > 0) {
-    setFace(face);
+  if (face) {
+    setFace(String(face));
   }
   
-  // If face-only, just acknowledge
+  // Check if we only have a face but no command
+  bool faceOnly = (face != nullptr && command == nullptr);
+  
   if (faceOnly) {
     recordInput();
     server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Face updated\"}");
     return;
   }
   
+  if (!command) {
+    server.send(400, "application/json", "{\"error\":\"Missing command field\"}");
+    return;
+  }
+  
   // Execute command
-  if (command == "stop") {
+  String cmdStr = String(command);
+  if (cmdStr == "stop") {
     currentCommand = "";
     recordInput();
     server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Command stopped\"}");
   } else {
-    currentCommand = command;
+    currentCommand = cmdStr;
     recordInput();
     exitIdle();
     server.send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Command executed\"}");
@@ -380,13 +345,18 @@ void handleWifiPage() {
 void handleWifiScan() {
   int n = WiFi.scanNetworks();
   String json = "[";
+  json.reserve(n * 128); // Pre-allocate memory to avoid fragmentation
   for (int i = 0; i < n; i++) {
     String ssid = WiFi.SSID(i);
     ssid.replace("\\", "\\\\");
     ssid.replace("\"", "\\\"");
     if (i > 0) json += ",";
-    json += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + WiFi.RSSI(i)
-          + ",\"secure\":" + (WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false") + "}";
+    
+    char entry[150];
+    snprintf(entry, sizeof(entry), 
+      "{\"ssid\":\"%s\",\"rssi\":%d,\"secure\":%s}",
+      ssid.c_str(), WiFi.RSSI(i), (WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false"));
+    json += entry;
   }
   json += "]";
   WiFi.scanDelete();
@@ -398,41 +368,40 @@ void handleWifiConnect() {
     server.send(405, "application/json", "{\"error\":\"Method not allowed\"}");
     return;
   }
-  String body = server.arg("plain");
-  // Simple JSON parse for {"ssid":"...","password":"..."}
-  auto extractField = [&](const String& key) -> String {
-    String search = "\"" + key + "\":\"";
-    int s = body.indexOf(search);
-    if (s < 0) return "";
-    s += search.length();
-    int e = body.indexOf("\"", s);
-    return e > s ? body.substring(s, e) : "";
-  };
-  String ssid = extractField("ssid");
-  String pass = extractField("password");
-  if (ssid.length() == 0) {
+  
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  const char* ssid = doc["ssid"];
+  const char* pass = doc["password"];
+
+  if (!ssid) {
     server.send(400, "application/json", "{\"error\":\"Missing ssid\"}");
     return;
   }
+  
   // Persist credentials
   wifiPrefs.begin("sesame-wifi", false);
   wifiPrefs.putString("ssid", ssid);
-  wifiPrefs.putString("pass", pass);
+  wifiPrefs.putString("pass", pass ? pass : "");
   wifiPrefs.end();
-  tryNetworkConnect(ssid, pass);
+  
+  tryNetworkConnect(ssid, pass ? pass : "");
   server.send(200, "application/json", "{\"status\":\"connecting\"}");
 }
 
 void handleWifiStatus() {
-  String json = "{";
+  char json[100];
   if (networkConnected) {
-    json += "\"connected\":true,\"ip\":\"" + networkIP.toString() + "\"";
-  } else if (wifiFailed) {
-    json += "\"connected\":false,\"failed\":true";
+    snprintf(json, sizeof(json), "{\"connected\":true,\"ip\":\"%s\"}", networkIP.toString().c_str());
   } else {
-    json += "\"connected\":false,\"failed\":false";
+    snprintf(json, sizeof(json), "{\"connected\":false,\"failed\":%s}", wifiFailed ? "true" : "false");
   }
-  json += "}";
   server.send(200, "application/json", json);
 }
 
@@ -464,50 +433,24 @@ void setup() {
   enableNetworkMode = settings.getBool("net_mode", false);
   settings.end();
 
-  // Try to connect to network first if configured
-  if (enableNetworkMode && String(NETWORK_SSID).length() > 0) {
-    Serial.println("Attempting to connect to network: " + String(NETWORK_SSID));
-    WiFi.mode(WIFI_AP_STA); // Enable both AP and Station modes
-    WiFi.setHostname(deviceHostname.c_str());
-    WiFi.begin(NETWORK_SSID, NETWORK_PASS);
-    
-    // Wait up to 10 seconds for connection
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-      delay(500);
-      Serial.print(".");
-      attempts++;
-    }
-    
-    if (WiFi.status() == WL_CONNECTED) {
-      networkConnected = true;
-      networkIP = WiFi.localIP();
-      Serial.println();
-      Serial.print("Connected to network! IP: ");
-      Serial.println(networkIP);
-    } else {
-      Serial.println();
-      Serial.println("Failed to connect to network. Running in AP-only mode.");
-      WiFi.mode(WIFI_AP); // Fall back to AP-only
-    }
-  } else {
-    WiFi.mode(WIFI_AP);
-    Serial.println("Network mode disabled. Running in AP-only mode.");
-  }
-  
-  // --- ACCESS POINT CONFIGURATION ---
+  WiFi.mode(WIFI_AP);
   WiFi.softAP(AP_SSID, AP_PASS);
   IPAddress myIP = WiFi.softAPIP();
   
   Serial.print("AP Created. IP: ");
   Serial.println(myIP);
 
-  // Build WiFi info text for scrolling
-  if (networkConnected) {
-    wifiInfoText = "AP: " + String(AP_SSID) + " (" + myIP.toString() + ")  |  Network: " + String(NETWORK_SSID) + " (" + networkIP.toString() + ") or " + deviceHostname + ".local  |  ";
-  } else {
-    wifiInfoText = "Connect to WiFi: " + String(AP_SSID) + "  |  Pass: " + String(AP_PASS) + "  |  IP: " + myIP.toString() + "  |  Captive Portal will auto-open!  |  ";
+  if (enableNetworkMode) {
+    loadSavedWifi();
+    // If no saved WiFi, try the hardcoded one from the code
+    if (!wifiConnecting && String(NETWORK_SSID).length() > 0) {
+      Serial.println("Using hardcoded credentials from source code...");
+      tryNetworkConnect(NETWORK_SSID, NETWORK_PASS);
+    }
   }
+
+  // Initial WiFi info text
+  updateWifiInfoText();
   
   // Initialize input tracking
   lastInputTime = millis();
@@ -529,8 +472,7 @@ void setup() {
   // This redirects ALL domain requests to the ESP32's IP
   dnsServer.start(DNS_PORT, "*", myIP);
 
-  // Load saved WiFi credentials and attempt connection
-  loadSavedWifi();
+  // Removed redundant blocking loadSavedWifi() call as it's now handled non-blockingly above
 
   // Web Server Routes
   server.on("/", handleRoot);
@@ -586,10 +528,12 @@ void loop() {
       networkIP        = WiFi.localIP();
       wifiConnecting   = false;
       wifiFailed       = false;
+      updateWifiInfoText(); // Update scrolling text with new IP
       Serial.println("[WiFi] Connected! IP: " + networkIP.toString());
     } else if (s == WL_CONNECT_FAILED || s == WL_NO_SSID_AVAIL || s == WL_DISCONNECTED) {
       wifiFailed     = true;
       wifiConnecting = false;
+      updateWifiInfoText(); // Update scrolling text to show failure
       Serial.println("[WiFi] Connection failed (status " + String(s) + ")");
     }
   }
@@ -961,5 +905,15 @@ void updateWifiInfoScroll() {
     if (wifiScrollPos >= (int)(wifiInfoText.length() * 6)) {
       wifiScrollPos = 0;
     }
+  }
+}
+void updateWifiInfoText() {
+  IPAddress myIP = WiFi.softAPIP();
+  if (networkConnected) {
+    wifiInfoText = "AP: " + String(AP_SSID) + " (" + myIP.toString() + ")  |  Network: " + WiFi.SSID() + " (" + networkIP.toString() + ") or " + deviceHostname + ".local  |  ";
+  } else if (wifiConnecting) {
+    wifiInfoText = "Connecting to WiFi...  |  AP: " + String(AP_SSID) + " (" + myIP.toString() + ")  |  ";
+  } else {
+    wifiInfoText = "Connect to WiFi: " + String(AP_SSID) + "  |  Pass: " + String(AP_PASS) + "  |  IP: " + myIP.toString() + "  |  Captive Portal will auto-open!  |  ";
   }
 }
