@@ -106,6 +106,7 @@ jobs:
               version: 3.0.9
             - name: Adafruit SSD1306
             - name: Adafruit GFX Library
+            - name: ArduinoJson
 
           # ---- Reports --------------------------------------------------------
           enable-deltas-report: false
